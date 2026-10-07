@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prediksi Shio & 2D — LSTM + Optuna</title>
+  <style>
+    :root {
+      --hitam: #0a0a0f;
+      --emas: #d4af37;
+      --emas-terang: #f0d760;
+      --abu: #1a1a24;
+      --abu-lembut: #2a2a38;
+      --teks: #e6e6e6;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Roboto, sans-serif; }
+    body { background: var(--hitam); color: var(--teks); min-height: 100vh; padding: 1rem; }
+    .wadah { max-width: 1200px; margin: 0 auto; }
+    header { text-align: center; padding: 1.5rem 0; border-bottom: 1px solid var(--emas); margin-bottom: 1.5rem; }
+    h1 { color: var(--emas); font-size: 1.6rem; }
+    .info-waktu { font-size: 0.9rem; color: #999; margin-top: 0.5rem; }
+    .tombol-refresh { background: var(--emas); color: #000; border: none; padding: 0.6rem 1.2rem; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 0.8rem; transition: 0.2s; }
+    .tombol-refresh:hover { background: var(--emas-terang); }
+    .pilihan-pasaran { margin: 1rem 0; text-align: center; }
+    select { background: var(--abu); color: var(--teks); border: 1px solid var(--emas); padding: 0.5rem; border-radius: 6px; font-size: 1rem; min-width: 220px; }
+    .kartu { background: var(--abu); border: 1px solid var(--emas); border-radius: 10px; padding: 1.2rem; margin-bottom: 1.2rem; box-shadow: 0 0 12px rgba(212,175,55,0.1); }
+    .kartu h2 { color: var(--emas); font-size: 1.2rem; margin-bottom: 1rem; border-bottom: 1px solid #333; padding-bottom: 0.5rem; }
+    .baris { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+    .kotak { background: var(--abu-lembut); padding: 0.9rem; border-radius: 8px; }
+    .kotak h3 { font-size: 0.9rem; color: #aaa; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 1px; }
+    .angka-7 { font-size: 1.2rem; font-weight: bold; color: var(--emas); letter-spacing: 2px; font-family: 'Courier New', monospace; }
+    .angka-9 { font-size: 1rem; color: #888; letter-spacing: 1px; font-family: 'Courier New', monospace; margin-top: 0.3rem; }
+    .bagian-2d { margin-top: 1.2rem; }
+    .grid-2d { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin-top: 0.8rem; }
+    .kotak-2d { background: var(--abu-lembut); padding: 1rem; border-radius: 8px; border-left: 3px solid var(--emas); }
+    .kotak-2d h3 { color: var(--emas); margin-bottom: 0.6rem; font-size: 1rem; }
+    .pasangan { font-family: 'Courier New', monospace; font-size: 0.9rem; line-height: 1.6; color: #ddd; word-break: break-all; }
+    .daftar-shio { margin-top: 0.5rem; font-size: 0.85rem; color: #999; }
+    .daftar-shio strong { color: var(--emas); }
+    .label-metode { display: inline-block; background: var(--emas); color: #000; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; margin-bottom: 0.8rem; }
+    .memuat { text-align: center; padding: 3rem; color: #888; }
+    .tersembunyi { display: none !important; }
+    .footer { text-align: center; margin-top: 2rem; font-size: 0.8rem; color: #555; }
+  </style>
+</head>
+<body>
+<div class="wadah">
+  <header>
+    <h1>🔮 PREDIKSI SHIO & 2D — LSTM + Optuna</h1>
+    <div class="info-waktu" id="infoWaktu">Memuat data...</div>
+    <button class="tombol-refresh" onclick="muatUlang()">🔄 Muat Ulang Data</button>
+  </header>
+
+  <div class="pilihan-pasaran" id="pilihPasaran">
+    <select id="daftarPasaran" onchange="tampilkanPasaran(this.value)">
+      <option value="">Pilih Pasaran...</option>
+    </select>
+  </div>
+
+  <div id="konten">
+    <div class="memuat" id="sedangMemuat">Sedang mengambil data terbaru...</div>
+  </div>
+
+  <div class="footer">
+    Sumber data: Data-Lotre • Model: LSTM + Optuna • Pembaruan otomatis tiap 12 jam
+  </div>
+</div>
+
+<script>
+let dataGlobal = null;
+
+async function ambilData() {
+  try {
+    const res = await fetch('hasil_prediksi.json?t=' + Date.now());
+    if (!res.ok) throw new Error('File tidak ditemukan');
+    dataGlobal = await res.json();
+    tampilkanInfoDasar();
+    isiDaftarPasaran();
+  } catch (e) {
+    document.getElementById('sedangMemuat').innerHTML =
+      '⚠️ Gagal memuat data: ' + e.message + '<br>Pastikan <code>hasil_prediksi.json</code> sudah ada di repo.';
+  }
+}
+
+function tampilkanInfoDasar() {
+  const w = dataGlobal.diperbarui;
+  document.getElementById('infoWaktu').innerHTML =
+    `Terakhir diperbarui: <strong>${w}</strong> (${dataGlobal.zona_waktu})`;
+}
+
+function isiDaftarPasaran() {
+  const pilih = document.getElementById('daftarPasaran');
+  pilih.innerHTML = '<option value="">Pilih Pasaran...</option>';
+  dataGlobal.daftar_pasaran.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p;
+    opt.textContent = p;
+    pilih.appendChild(opt);
+  });
+  document.getElementById('sedangMemuat').classList.add('tersembunyi');
+}
+
+function tampilkanPasaran(kode) {
+  if (!kode || !dataGlobal.hasil[kode]) {
+    document.getElementById('konten').innerHTML = '';
+    return;
+  }
+  const p = dataGlobal.hasil[kode];
+  let html = `<h2 style="color:var(--emas); margin-bottom:1rem;">📊 ${kode}</h2>`;
+
+  ['early_stopping', 'optuna'].forEach(metode => {
+    const m = p[metode];
+    const namaMetode = metode === 'early_stopping' ? '⏱️ Early Stopping' : '🎯 Optuna';
+
+    html += `<div class="kartu">
+      <span class="label-metode">${namaMetode} — Epoch: ${m.pengaturan.epoch} | Batch: ${m.pengaturan.batch_size}</span>
+      
+      <div class="baris">
+        ${['AS','KOP','KEPALA','EKOR'].map(pos => `
+        <div class="kotak">
+          <h3>${pos}</h3>
+          <div class="angka-7">7+1D: ${m[pos].overdue.tujuh.join('')}</div>
+          <div class="angka-9">9D: ${m[pos].overdue.sembilan.join('')}</div>
+        </div>`).join('')}
+      </div>
+
+      <div class="bagian-2d">
+        <h3>🔗 Gabungan 2D + Shio</h3>
+        <div class="grid-2d">
+          ${['2DD','2DT','2DB'].map(jenis => `
+          <div class="kotak-2d">
+            <h3>${jenis} — ${jenis==='2DD'?'AS+KOP':jenis==='2DT'?'KOP+KEP':'KEP+EKOR'}</h3>
+            <div class="pasangan">${m['2D'][jenis].pasangan.slice(0,12).join(' · ')}</div>
+            <div class="daftar-shio"><strong>Shio:</strong> ${m['2D'][jenis].shio.join(', ')}</div>
+          </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+  });
+
+  document.getElementById('konten').innerHTML = html;
+}
+
+function muatUlang() {
+  dataGlobal = null;
+  document.getElementById('sedangMemuat').classList.remove('tersembunyi');
+  document.getElementById('konten').innerHTML = '';
+  document.getElementById('daftarPasaran').innerHTML = '<option value="">Pilih Pasaran...</option>';
+  ambilData();
+}
+
+document.addEventListener('DOMContentLoaded', ambilData);
+</script>
+</body>
+</html>
