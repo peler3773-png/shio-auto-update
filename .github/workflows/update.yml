@@ -1,0 +1,35 @@
+name: Auto Update Shio
+run-name: 🔄 Update prediksi shio & 2D — ${{ github.event_name }}
+
+on:
+  schedule:
+    - cron: '0 0,12 * * *'   # ← TEPAT SETIAP 12 JAM: 07.00 WIB & 19.00 WIB
+  workflow_dispatch:          # ← Bisa dijalankan manual lewat halaman Actions
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📂 Ambil kode dari repo
+        uses: actions/checkout@v4
+
+      - name: 🐍 Siapkan Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Pasang pustaka
+        run: |
+          python -m pip install --upgrade pip
+          pip install tensorflow optuna numpy
+
+      - name: 🚀 Jalankan prediksi
+        run: python cari_shio.py
+
+      - name: 💾 Simpan hasil ke repo
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+          git add hasil_prediksi.json
+          git commit -m "🤖 Update otomatis: $(date +'%Y-%m-%d %H:%M:%S') WIB" || echo "Tidak ada perubahan"
+          git push
