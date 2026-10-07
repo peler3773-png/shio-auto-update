@@ -3,12 +3,14 @@ run-name: 🔄 Update prediksi shio & 2D — ${{ github.event_name }}
 
 on:
   schedule:
-    - cron: '0 0,12 * * *'   # ← TEPAT SETIAP 12 JAM: 07.00 WIB & 19.00 WIB
-  workflow_dispatch:          # ← Bisa dijalankan manual lewat halaman Actions
+    - cron: '0 0,12 * * *'   # 07.00 & 19.00 WIB tiap hari
+  workflow_dispatch:
 
 jobs:
   update:
     runs-on: ubuntu-latest
+    # Batas waktu total → dipotong dari 3 jam jadi 10 menit
+    timeout-minutes: 180
     steps:
       - name: 📂 Ambil kode dari repo
         uses: actions/checkout@v4
@@ -17,11 +19,12 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'   # ✅ Cache pustaka → pasang ulang jadi detik
 
       - name: 📦 Pasang pustaka
         run: |
           python -m pip install --upgrade pip
-          pip install tensorflow optuna numpy
+          pip install --no-cache-dir tensorflow-cpu optuna numpy
 
       - name: 🚀 Jalankan prediksi
         run: python cari_shio.py
