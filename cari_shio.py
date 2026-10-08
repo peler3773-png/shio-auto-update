@@ -159,7 +159,7 @@ def format_10(prob):
         "p9":  [str(a) for a in urut[:9]]
     }
 
-# === ✅ DIPERBAIKI: Kompilasi Model Secara Benar ===
+# === ✅ DIPERBAIKI: Metrik Sesuai Jumlah Output ===
 def bangun_model():
     inp = Input(shape=(LOOKBACK, 4))
     x = LSTM(64, activation='relu')(inp)
@@ -178,7 +178,12 @@ def bangun_model():
             'kep': 'sparse_categorical_crossentropy',
             'eko': 'sparse_categorical_crossentropy'
         },
-        metrics=['accuracy']
+        metrics={
+            'as': 'accuracy',
+            'kop': 'accuracy',
+            'kep': 'accuracy',
+            'eko': 'accuracy'
+        }
     )
     return model
 
