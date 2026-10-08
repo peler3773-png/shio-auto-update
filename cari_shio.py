@@ -154,61 +154,87 @@ def bobot_overdue(data, pos):
 def format_10(prob):
     urut = np.argsort(prob)[::-1].tolist()
     return {
-        "p10": [str(a) for a in urut[:10]],   # 10 teratas
-        "p7":  [str(a) for a in urut[:7]],    # 7 teratas
-        "p9":  [str(a) for a in urut[:9]]     # 9 teratas
+        "p10": [str(a) for a in urut[:10]],
+        "p7":  [str(a) for a in urut[:7]],
+        "p9":  [str(a) for a in urut[:9]]
     }
 
+# === ✅ DIPERBAIKI: Kompilasi Model Secara Benar ===
 def bangun_model():
     inp = Input(shape=(LOOKBACK, 4))
     x = LSTM(64, activation='relu')(inp)
     x = Dense(32, activation='relu')(x)
-    out = [Dense(10, activation='softmax', name=n)(x) for n in ["as","kop","kep","eko"]]
-    return Model(inputs=inp, outputs=out)
+    out_as = Dense(10, activation='softmax', name='as')(x)
+    out_kop = Dense(10, activation='softmax', name='kop')(x)
+    out_kep = Dense(10, activation='softmax', name='kep')(x)
+    out_eko = Dense(10, activation='softmax', name='eko')(x)
+    
+    model = Model(inputs=inp, outputs=[out_as, out_kop, out_kep, out_eko])
+    model.compile(
+        optimizer='adam',
+        loss={
+            'as': 'sparse_categorical_crossentropy',
+            'kop': 'sparse_categorical_crossentropy',
+            'kep': 'sparse_categorical_crossentropy',
+            'eko': 'sparse_categorical_crossentropy'
+        },
+        metrics=['accuracy']
+    )
+    return model
 
 def siapkan_data(dp):
     n = len(dp) - LOOKBACK
-    if n < 20 + VALIDASI_MIN: return None,None,None,None,0
+    if n < 20 + VALIDASI_MIN: return None, None, None, None, 0
     X = np.zeros((n, LOOKBACK, 4), dtype=np.float32)
-    Y = np.zeros((n, 4), dtype=np.int32)
+    Y_as = np.zeros((n,), dtype=np.int32)
+    Y_kop = np.zeros((n,), dtype=np.int32)
+    Y_kep = np.zeros((n,), dtype=np.int32)
+    Y_eko = np.zeros((n,), dtype=np.int32)
     for i in range(n):
         X[i] = [dp[j]["angka"] for j in range(i, i+LOOKBACK)]
-        Y[i] = dp[i+LOOKBACK]["angka"]
-    b = min(max(5, int(0.85*n)), n-VALIDASI_MIN)
-    return X[:b], {"as":Y[:b,0],"kop":Y[:b,1],"kep":Y[:b,2],"eko":Y[:b,3]}, \
-           X[b:], {"as":Y[b:,0],"kop":Y[b:,1],"kep":Y[b:,2],"eko":Y[b:,3]}, b
+        Y_as[i] = dp[i+LOOKBACK]["angka"][0]
+        Y_kop[i] = dp[i+LOOKBACK]["angka"][1]
+        Y_kep[i] = dp[i+LOOKBACK]["angka"][2]
+        Y_eko[i] = dp[i+LOOKBACK]["angka"][3]
+    batas = min(max(5, int(0.85*n)), n-VALIDASI_MIN)
+    X_tr, X_val = X[:batas], X[batas:]
+    Y_tr = {'as':Y_as[:batas], 'kop':Y_kop[:batas], 'kep':Y_kep[:batas], 'eko':Y_eko[:batas]}
+    Y_val = {'as':Y_as[batas:], 'kop':Y_kop[batas:], 'kep':Y_kep[batas:], 'eko':Y_eko[batas:]}
+    return X_tr, Y_tr, X_val, Y_val, batas
 
 def latih_es(X,Y,Xv,Yv):
-    if X is None: return None,None
+    if X is None: return None, None
     m = bangun_model()
-    es = EarlyStopping(patience=PATIENCE_ES, restore_best_weights=True, verbose=0)
-    h = m.fit(X,Y,epochs=100,batch_size=32,validation_data=(Xv,Yv),callbacks=[es],verbose=0)
-    return m, {"epoch":len(h.history["loss"]),"batch_size":32,"jenis":"Early Stopping"}
+    es = EarlyStopping(monitor='val_loss', patience=PATIENCE_ES, restore_best_weights=True, verbose=0)
+    h = m.fit(X, Y, epochs=100, batch_size=32, validation_data=(Xv, Yv), callbacks=[es], verbose=0)
+    return m, {"epoch": len(h.history['loss']), "batch_size": 32, "jenis": "Early Stopping"}
 
 def cari_optuna(X,Y,Xv,Yv):
-    if X is None: return None,None
+    if X is None: return None, None
     def tujuan(t):
         m = bangun_model()
         e = t.suggest_int("epoch", OPTUNA_EPOCH_MIN, OPTUNA_EPOCH_MAX)
         b = t.suggest_categorical("batch_size", OPTUNA_BATCH)
-        es = EarlyStopping(patience=PATIENCE_OPTUNA_SEARCH, restore_best_weights=True, verbose=0)
-        return min(m.fit(X,Y,epochs=e,batch_size=b,validation_data=(Xv,Yv),callbacks=[es],verbose=0).history["val_loss"])
+        es = EarlyStopping(monitor='val_loss', patience=PATIENCE_OPTUNA_SEARCH, restore_best_weights=True, verbose=0)
+        riwayat = m.fit(X, Y, epochs=e, batch_size=b, validation_data=(Xv, Yv), callbacks=[es], verbose=0)
+        return min(riwayat.history['val_loss'])
     st = optuna.create_study(direction="minimize")
     st.optimize(tujuan, n_trials=OPTUNA_CUPIKAN, show_progress_bar=False)
     bp = st.best_params
     m = bangun_model()
-    es = EarlyStopping(patience=PATIENCE_OPTUNA_FINAL, restore_best_weights=True, verbose=0)
-    m.fit(X,Y,epochs=bp["epoch"],batch_size=bp["batch_size"],validation_data=(Xv,Yv),callbacks=[es],verbose=0)
-    return m, {"epoch":bp["epoch"],"batch_size":bp["batch_size"],"jenis":"Optuna"}
+    es = EarlyStopping(monitor='val_loss', patience=PATIENCE_OPTUNA_FINAL, restore_best_weights=True, verbose=0)
+    m.fit(X, Y, epochs=bp["epoch"], batch_size=bp["batch_size"], validation_data=(Xv, Yv), callbacks=[es], verbose=0)
+    return m, {"epoch": bp["epoch"], "batch_size": bp["batch_size"], "jenis": "Optuna"}
 
 def jalankan_prediksi(model, info, dp):
-    inp = np.expand_dims(np.array([dp[j]["angka"] for j in range(-LOOKBACK,0)], dtype=np.float32), 0)
+    inp = np.expand_dims(np.array([dp[j]["angka"] for j in range(-LOOKBACK, 0)], dtype=np.float32), 0)
     pred = model.predict(inp, verbose=0)
-    posisi = ["AS","KOP","KEPALA","EKOR"]
-    output = ["as","kop","kep","eko"]
+    nama_output = ["as", "kop", "kep", "eko"]
+    nama_posisi = ["AS", "KOP", "KEPALA", "EKOR"]
     hasil_pos = {}
-    for idx, (nm, onm) in enumerate(zip(posisi, output)):
-        p = pred[idx][0].copy(); p /= p.sum()
+    for idx, (nm, onm) in enumerate(zip(nama_posisi, nama_output)):
+        p = pred[idx][0].copy()
+        p /= p.sum()
         bobot = bobot_overdue(dp, idx)
         po = p.copy()
         for d in range(10): po[d] *= bobot[str(d)]
