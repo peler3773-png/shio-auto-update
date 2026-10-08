@@ -1,347 +1,139 @@
-import os
-import sys
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-SEED_TETAP = 20261004
-import random
-random.seed(SEED_TETAP)
-import numpy as np
-np.random.seed(SEED_TETAP)
-import tensorflow as tf
-tf.random.set_seed(SEED_TETAP)
-tf.get_logger().setLevel('ERROR')
-try:
-    import optuna
-except ImportError:
-    print("❌ ERROR: Pasang dulu → pip install optuna")
-    sys.exit(1)
-import urllib.request
-import json
-from datetime import datetime
-from tensorflow.keras.models import Model
-from tensorflow.keras.layers import LSTM, Dense, Input
-from tensorflow.keras.callbacks import EarlyStopping
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prediksi Shio & 2D — 10 Angka</title>
+  <style>
+    :root {
+      --hitam: #0a0a0f; --emas: #d4af37; --emas-terang: #f0d760;
+      --abu: #1a1a24; --abu-lembut: #2a2a38; --teks: #e6e6e6;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Roboto, sans-serif; }
+    body { background: var(--hitam); color: var(--teks); min-height: 100vh; padding: 1rem; }
+    .wadah { max-width: 1200px; margin: 0 auto; }
+    header { text-align: center; padding: 1.5rem 0; border-bottom: 1px solid var(--emas); margin-bottom: 1.5rem; }
+    h1 { color: var(--emas); font-size: 1.6rem; }
+    .info-waktu { font-size: 0.9rem; color: #999; margin-top: 0.5rem; line-height: 1.6; }
+    .tombol-refresh { background: var(--emas); color: #000; border: none; padding: 0.6rem 1.2rem; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 0.8rem; transition: 0.2s; }
+    .tombol-refresh:hover { background: var(--emas-terang); }
+    select { background: var(--abu); color: var(--teks); border: 1px solid var(--emas); padding: 0.5rem; border-radius: 6px; font-size: 1rem; min-width: 260px; }
+    .kartu { background: var(--abu); border: 1px solid var(--emas); border-radius: 10px; padding: 1.2rem; margin-bottom: 1.2rem; }
+    .kartu h2 { color: var(--emas); font-size: 1.2rem; margin-bottom: 1rem; border-bottom: 1px solid #333; padding-bottom: 0.5rem; }
+    .baris { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+    .kotak { background: var(--abu-lembut); padding: 0.9rem; border-radius: 8px; }
+    .kotak h3 { font-size: 0.9rem; color: #aaa; margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 1px; }
+    .angka-7 { font-size: 1.3rem; font-weight: bold; color: var(--emas); letter-spacing: 3px; font-family: 'Courier New', monospace; }
+    .angka-9 { font-size: 0.85rem; color: #888; letter-spacing: 1px; font-family: 'Courier New', monospace; margin-top: 0.4rem; }
+    .bagian-2d { margin-top: 1.2rem; }
+    .grid-2d { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin-top: 0.8rem; }
+    .kotak-2d { background: var(--abu-lembut); padding: 1rem; border-radius: 8px; border-left: 3px solid var(--emas); }
+    .kotak-2d h3 { color: var(--emas); margin-bottom: 0.6rem; font-size: 1rem; }
+    .pasangan { font-family: 'Courier New', monospace; font-size: 0.9rem; line-height: 1.6; color: #ddd; word-break: break-all; }
+    .daftar-shio { margin-top: 0.5rem; font-size: 0.9rem; color: #ccc; line-height: 1.6; }
+    .daftar-shio strong { color: var(--emas); }
+    .label-metode { display: inline-block; background: var(--emas); color: #000; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; margin-bottom: 0.8rem; }
+    .memuat { text-align: center; padding: 3rem; color: #888; }
+    .tersembunyi { display: none !important; }
+    .footer { text-align: center; margin-top: 2rem; font-size: 0.8rem; color: #555; }
+  </style>
+</head>
+<body>
+<div class="wadah">
+  <header>
+    <h1>🔮 PREDIKSI SHIO & 2D — 10 Angka</h1>
+    <div class="info-waktu" id="infoWaktu">Memuat data...</div>
+    <button class="tombol-refresh" onclick="muatUlang()">🔄 Muat Ulang</button>
+  </header>
+  <div style="text-align:center; margin:1rem;">
+    <select id="daftarPasaran" onchange="tampilkanPasaran(this.value)">
+      <option value="">Pilih Pasaran...</option>
+    </select>
+  </div>
+  <div id="konten"><div class="memuat" id="sedangMemuat">Mengambil data...</div></div>
+  <div class="footer">LSTM + Optuna • Shio: Nomor Urut Saja</div>
+</div>
+<script>
+let dataGlobal = null;
 
-# === PENGATURAN ===
-DAFTAR_PASARAN_TETAP = ["BE", "CLF", "SD", "HK", "SGP", "PS", "MCSE", "NCE", "TM", "TXM"]
-LIBUR_MINGGU = ["PS", "TM", "TXM"]
-LIBUR_SGP_HARI = ["Selasa", "Jumat"]
-DATA_UNDIAN_URL = "https://raw.githubusercontent.com/peler3773-png/Data-Lotre/main/data_undian.txt"
-LOOKBACK = 12
-LIMIT_PER_PASARAN = 600
-FAKTOR_OVERDUE = 0.40
-OPTUNA_EPOCH_MIN, OPTUNA_EPOCH_MAX = 30, 55
-OPTUNA_BATCH = [32, 64]
-OPTUNA_CUPIKAN = 5
-VALIDASI_MIN = 7
-PATIENCE_ES = 8
-PATIENCE_OPTUNA_SEARCH = 5
-PATIENCE_OPTUNA_FINAL = 7
-
-# === SHIO DINAMIS ===
-DAFTAR_SHIO_URUTAN = [
-    {"urutan": 1, "nama": "KUDA"},
-    {"urutan": 2, "nama": "ULAR"},
-    {"urutan": 3, "nama": "NAGA"},
-    {"urutan": 4, "nama": "KELINCI"},
-    {"urutan": 5, "nama": "HARIMAU"},
-    {"urutan": 6, "nama": "KERBAU"},
-    {"urutan": 7, "nama": "TIKUS"},
-    {"urutan": 8, "nama": "BABI"},
-    {"urutan": 9, "nama": "ANJING"},
-    {"urutan": 10, "nama": "AYAM"},
-    {"urutan": 11, "nama": "MONYET"},
-    {"urutan": 12, "nama": "KAMBING"}
-]
-POLA_DASAR = {
-    "KUDA":    ["01","13","25","37","49","61","73","85","97"],
-    "ULAR":    ["02","14","26","38","50","62","74","86","98"],
-    "NAGA":    ["03","15","27","39","51","63","75","87","99"],
-    "KELINCI": ["04","16","28","40","52","64","76","88","00"],
-    "HARIMAU": ["05","17","29","41","53","65","77","89"],
-    "KERBAU":  ["06","18","30","42","54","66","78","90"],
-    "TIKUS":   ["07","19","31","43","55","67","79","91"],
-    "BABI":    ["08","20","32","44","56","68","80","92"],
-    "ANJING":  ["09","21","33","45","57","69","81","93"],
-    "AYAM":    ["10","22","34","46","58","70","82","94"],
-    "MONYET":  ["11","23","35","47","59","71","83","95"],
-    "KAMBING": ["12","24","36","48","60","72","84","96"]
+async function ambilData() {
+  try {
+    const res = await fetch('hasil_prediksi.json?t=' + Date.now());
+    if (!res.ok) throw new Error('Berkas tidak ditemukan');
+    dataGlobal = await res.json();
+    tampilkanInfo(); isiPasaran();
+  } catch (e) {
+    document.getElementById('sedangMemuat').innerHTML = '⚠️ Gagal: ' + e.message;
+  }
 }
 
-def hitung_geseran(tahun=None):
-    if tahun is None: tahun = datetime.now().year
-    return (tahun - 2026) % 12
+function tampilkanInfo() {
+  const hari = dataGlobal.pengaturan?.hari_ini || '-';
+  const aktif = dataGlobal.pengaturan?.daftar_pasaran_aktif?.join(', ') || '-';
+  document.getElementById('infoWaktu').innerHTML =
+    `Terakhir: <strong>${dataGlobal.diperbarui}</strong> (${dataGlobal.zona_waktu})<br>` +
+    `Shio ${dataGlobal.shio_tahun} | Geser ${dataGlobal.shio_geser} | Hari: ${hari}<br>` +
+    `Pasaran Aktif: <strong>${aktif}</strong>`;
+}
 
-def bangun_peta_shio(tahun=None):
-    if tahun is None: tahun = datetime.now().year
-    geser = hitung_geseran(tahun)
-    urut_digeser = DAFTAR_SHIO_URUTAN[geser:] + DAFTAR_SHIO_URUTAN[:geser]
-    nama_dasar = list(POLA_DASAR.keys())
-    peta_shio, peta_angka, nomor_nama = {}, {}, {}
-    for idx, s in enumerate(urut_digeser):
-        i_dasar = (idx - geser) % len(nama_dasar)
-        angka = POLA_DASAR[nama_dasar[i_dasar]]
-        peta_shio[s["nama"]] = {"urutan": s["urutan"], "angka": angka, "tahun": tahun}
-        nomor_nama[s["urutan"]] = s["nama"]
-        for a in angka:
-            peta_angka[a] = {"nomor": s["urutan"], "nama": s["nama"]}
-    return peta_shio, peta_angka, nomor_nama, geser
+function isiPasaran() {
+  const p = document.getElementById('daftarPasaran');
+  p.innerHTML = '<option value="">Pilih Pasaran...</option>';
+  (dataGlobal.pengaturan?.daftar_pasaran_aktif || []).forEach(k => {
+    const o = document.createElement('option'); o.value = k; o.textContent = k; p.appendChild(o);
+  });
+  document.getElementById('sedangMemuat').classList.add('tersembunyi');
+}
 
-TAHUN_SEKARANG = datetime.now().year
-DATA_SHIO, ANGKA_KE_SHIO, NOMOR_KE_NAMA, GESERAN = bangun_peta_shio(TAHUN_SEKARANG)
+function tampilkanPasaran(kode) {
+  if (!kode || !dataGlobal.hasil?.[kode]) {
+    document.getElementById('konten').innerHTML = kode ? `<div class="memuat">Belum ada data ${kode}</div>` : '';
+    return;
+  }
+  const d = dataGlobal.hasil[kode];
+  let html = `<h2 style="color:var(--emas);margin-bottom:1rem;">📊 ${kode}</h2>`;
+  
+  ['early_stopping', 'optuna'].forEach(mtd => {
+    const m = d[mtd]; if (!m) return;
+    const nm = mtd === 'early_stopping' ? '⏱️ Early Stopping' : '🎯 Optuna';
+    
+    html += `<div class="kartu">
+      <span class="label-metode">${nm} — Epoch: ${m.pengaturan.epoch} | Batch: ${m.pengaturan.batch_size}</span>
+      <div class="baris">
+        ${['AS','KOP','KEPALA','EKOR'].map(pos => `
+        <div class="kotak">
+          <h3>${pos}</h3>
+          <div class="angka-7">10: ${m[pos]?.overdue?.p10?.join(' ') || '—'}</div>
+          <div class="angka-9">7D: ${m[pos]?.overdue?.p7?.join(' ') || '—'} | 9D: ${m[pos]?.overdue?.p9?.join(' ') || '—'}</div>
+        </div>`).join('')}
+      </div>
+      <div class="bagian-2d">
+        <h3>🔗 Gabungan 2D + Shio</h3>
+        <div class="grid-2d">
+          ${[['2DD','AS + KOP'],['2DT','KOP + KEPALA'],['2DB','KEPALA + EKOR']].map(([kd,ket]) => {
+            const x = m['2D']?.[kd]; if (!x) return '';
+            return `<div class="kotak-2d">
+              <h3>${kd} — ${ket}</h3>
+              <div class="pasangan">${x.pasangan.slice(0,10).join(' · ')}</div>
+              <div class="daftar-shio"><strong>Shio:</strong> ${x.shio_teks || x.shio_urut?.join(', ') || '—'}</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>`;
+  });
+  
+  document.getElementById('konten').innerHTML = html;
+}
 
-def nama_hari(tgl_str):
-    hari = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
-    try:
-        return hari[datetime.strptime(tgl_str, "%Y-%m-%d").weekday()]
-    except: return ""
+function muatUlang() {
+  dataGlobal = null;
+  document.getElementById('sedangMemuat').classList.remove('tersembunyi');
+  document.getElementById('konten').innerHTML = '';
+  ambilData();
+}
 
-def boleh_tampil(pasaran, tgl=None):
-    hari_ini = nama_hari(tgl or datetime.now().strftime("%Y-%m-%d"))
-    if pasaran in LIBUR_MINGGU and hari_ini == "Minggu": return False
-    if pasaran == "SGP" and hari_ini in LIBUR_SGP_HARI: return False
-    return True
-
-# === ✅ HITUNG SHIO — SEMUA 12 URUT TERKUAT ===
-def hitung_shio_dari_daftar(daftar_angka):
-    bobot = {}
-    for urut, ang in enumerate(daftar_angka):
-        berat = (10 - urut) / 10
-        if ang in ANGKA_KE_SHIO:
-            sn = ANGKA_KE_SHIO[ang]["nomor"]
-            bobot[sn] = bobot.get(sn, 0) + berat
-        akh = ang[-1]
-        for info in DATA_SHIO.values():
-            if any(a.endswith(akh) for a in info["angka"]):
-                sn = info["urutan"]
-                bobot[sn] = bobot.get(sn, 0) + berat * 0.5
-    for sn in range(1, 13):
-        if sn not in bobot: bobot[sn] = 0
-    urut = sorted(bobot.items(), key=lambda x: (-round(x[1],4), x[0]))
-    return [f"{k} {NOMOR_KE_NAMA[k]}" for k, _ in urut]
-
-# === ✅ DIPERBAIKI: mode didefinisikan dulu, akses list benar ===
-def hitung_2d_shio(as_data, kop_data, kep_data, eko_data):
-    mode = "overdue"  # ✅ Didefinisikan di awal
-    hasil = {}
-    for kd, x_data, y_data in [
-        ("2DD", as_data, kop_data),
-        ("2DT", kop_data, kep_data),
-        ("2DB", kep_data, eko_data),
-    ]:
-        # ✅ Ambil list p10 dulu → baru dipotong
-        x_list = x_data[mode]["p10"][:10]
-        y_list = y_data[mode]["p10"][:10]
-        psg = []
-        gabungan = []
-        for x in x_list:
-            for y in y_list:
-                gabungan.append(f"{x}{y}")
-                psg.append(f"{x}{y}")
-        shio_urut = hitung_shio_dari_daftar(gabungan)
-        hasil[kd] = {
-            "pasangan": psg[:10],
-            "shio_urut": shio_urut,
-            "shio_teks": ", ".join(shio_urut)
-        }
-    return hasil
-
-def bobot_overdue(data, pos):
-    terakhir = {str(d): None for d in range(10)}
-    for urut, b in enumerate(reversed(data)):
-        a = str(b["angka"][pos])
-        if terakhir[a] is None: terakhir[a] = urut
-    jarak = [v for v in terakhir.values() if v is not None]
-    if not jarak:
-        for d in terakhir: terakhir[d] = 0
-    else:
-        max_j = max(jarak) + 1
-        rata = sum(jarak)/len(jarak)
-        for d in terakhir:
-            if terakhir[d] is None: terakhir[d] = rata
-    return {d: 1 + (j/max_j)*FAKTOR_OVERDUE for d,j in terakhir.items()}
-
-def format_10(prob):
-    urut = np.argsort(prob)[::-1].tolist()
-    return {
-        "p10": [str(a) for a in urut[:10]],
-        "p7":  [str(a) for a in urut[:7]],
-        "p9":  [str(a) for a in urut[:9]]
-    }
-
-def bangun_model():
-    inp = Input(shape=(LOOKBACK, 4))
-    x = LSTM(64, activation='relu')(inp)
-    x = Dense(32, activation='relu')(x)
-    out_as = Dense(10, activation='softmax', name='as')(x)
-    out_kop = Dense(10, activation='softmax', name='kop')(x)
-    out_kep = Dense(10, activation='softmax', name='kep')(x)
-    out_eko = Dense(10, activation='softmax', name='eko')(x)
-    model = Model(inputs=inp, outputs=[out_as, out_kop, out_kep, out_eko])
-    model.compile(
-        optimizer='adam',
-        loss={
-            'as': 'sparse_categorical_crossentropy',
-            'kop': 'sparse_categorical_crossentropy',
-            'kep': 'sparse_categorical_crossentropy',
-            'eko': 'sparse_categorical_crossentropy'
-        },
-        metrics={
-            'as': 'accuracy',
-            'kop': 'accuracy',
-            'kep': 'accuracy',
-            'eko': 'accuracy'
-        }
-    )
-    return model
-
-def siapkan_data(dp):
-    n = len(dp) - LOOKBACK
-    if n < 20 + VALIDASI_MIN: return None, None, None, None, 0
-    X = np.zeros((n, LOOKBACK, 4), dtype=np.float32)
-    Y_as = np.zeros((n,), dtype=np.int32)
-    Y_kop = np.zeros((n,), dtype=np.int32)
-    Y_kep = np.zeros((n,), dtype=np.int32)
-    Y_eko = np.zeros((n,), dtype=np.int32)
-    for i in range(n):
-        X[i] = [dp[j]["angka"] for j in range(i, i+LOOKBACK)]
-        Y_as[i] = dp[i+LOOKBACK]["angka"][0]
-        Y_kop[i] = dp[i+LOOKBACK]["angka"][1]
-        Y_kep[i] = dp[i+LOOKBACK]["angka"][2]
-        Y_eko[i] = dp[i+LOOKBACK]["angka"][3]
-    batas = min(max(5, int(0.85*n)), n-VALIDASI_MIN)
-    X_tr, X_val = X[:batas], X[batas:]
-    Y_tr = {'as':Y_as[:batas], 'kop':Y_kop[:batas], 'kep':Y_kep[:batas], 'eko':Y_eko[:batas]}
-    Y_val = {'as':Y_as[batas:], 'kop':Y_kop[batas:], 'kep':Y_kep[batas:], 'eko':Y_eko[batas:]}
-    return X_tr, Y_tr, X_val, Y_val, batas
-
-def latih_es(X,Y,Xv,Yv):
-    if X is None: return None, None
-    m = bangun_model()
-    es = EarlyStopping(monitor='val_loss', patience=PATIENCE_ES, restore_best_weights=True, verbose=0)
-    h = m.fit(X, Y, epochs=100, batch_size=32, validation_data=(Xv, Yv), callbacks=[es], verbose=0)
-    return m, {"epoch": len(h.history['loss']), "batch_size": 32, "jenis": "Early Stopping"}
-
-def cari_optuna(X,Y,Xv,Yv):
-    if X is None: return None, None
-    def tujuan(t):
-        m = bangun_model()
-        e = t.suggest_int("epoch", OPTUNA_EPOCH_MIN, OPTUNA_EPOCH_MAX)
-        b = t.suggest_categorical("batch_size", OPTUNA_BATCH)
-        es = EarlyStopping(monitor='val_loss', patience=PATIENCE_OPTUNA_SEARCH, restore_best_weights=True, verbose=0)
-        riwayat = m.fit(X, Y, epochs=e, batch_size=b, validation_data=(Xv, Yv), callbacks=[es], verbose=0)
-        return min(riwayat.history['val_loss'])
-    st = optuna.create_study(direction="minimize")
-    st.optimize(tujuan, n_trials=OPTUNA_CUPIKAN, show_progress_bar=False)
-    bp = st.best_params
-    m = bangun_model()
-    es = EarlyStopping(monitor='val_loss', patience=PATIENCE_OPTUNA_FINAL, restore_best_weights=True, verbose=0)
-    m.fit(X, Y, epochs=bp["epoch"], batch_size=bp["batch_size"], validation_data=(Xv, Yv), callbacks=[es], verbose=0)
-    return m, {"epoch": bp["epoch"], "batch_size": bp["batch_size"], "jenis": "Optuna"}
-
-def jalankan_prediksi(model, info, dp):
-    inp = np.expand_dims(np.array([dp[j]["angka"] for j in range(-LOOKBACK, 0)], dtype=np.float32), 0)
-    pred = model.predict(inp, verbose=0)
-    hasil_pos = {}
-    nama_posisi = ["AS", "KOP", "KEPALA", "EKOR"]
-    nama_output = ["as", "kop", "kep", "eko"]
-    for idx, (nm, onm) in enumerate(zip(nama_posisi, nama_output)):
-        p = pred[idx][0].copy()
-        p /= p.sum()
-        bobot = bobot_overdue(dp, idx)
-        po = p.copy()
-        for d in range(10): po[d] *= bobot[str(d)]
-        po /= po.sum()
-        hasil_pos[nm] = {
-            "murni": format_10(p),
-            "overdue": format_10(po)
-        }
-    hasil_pos["2D"] = hitung_2d_shio(
-        hasil_pos["AS"], hasil_pos["KOP"], hasil_pos["KEPALA"], hasil_pos["EKOR"]
-    )
-    hasil_pos["pengaturan"] = info
-    return hasil_pos
-
-def utama():
-    print("📥 Mengambil data...")
-    req = urllib.request.Request(DATA_UNDIAN_URL, headers={"User-Agent":"Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        isi = r.read().decode("utf-8")
-    mentah = []
-    for b in isi.strip().splitlines():
-        p = b.split("|")
-        if len(p)>=4 and len(p[2])==4 and p[2].isdigit():
-            mentah.append({"pasaran":p[0].strip().upper(),"tanggal":p[1].strip(),
-                           "angka":[int(d) for d in p[2]],"nomor":p[2],"waktu":p[3].strip()})
-    dilihat, bersih = set(), []
-    for e in mentah:
-        k = (e["pasaran"], e["tanggal"], e["nomor"])
-        if k not in dilihat: dilihat.add(k); bersih.append(e)
-    mentah = bersih
-    mentah.sort(key=lambda x:(x["tanggal"], x["waktu"]))
-    data_pasaran = {}
-    for b in mentah: data_pasaran.setdefault(b["pasaran"], []).append(b)
-    for p in data_pasaran:
-        if len(data_pasaran[p])>LIMIT_PER_PASARAN:
-            data_pasaran[p] = data_pasaran[p][-LIMIT_PER_PASARAN:]
-
-    hari_ini = datetime.now().strftime("%Y-%m-%d")
-    daftar_aktif = []
-    for p in DAFTAR_PASARAN_TETAP:
-        if p not in data_pasaran:
-            print(f"ℹ️ {p:8} — tidak ada data"); continue
-        if not boleh_tampil(p, hari_ini):
-            print(f"🚫 {p:8} — libur ({nama_hari(hari_ini)})"); continue
-        daftar_aktif.append(p)
-
-    hasil_akhir = {
-        "diperbarui": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "zona_waktu": "WIB / UTC+7",
-        "shio_tahun": TAHUN_SEKARANG,
-        "shio_geser": GESERAN,
-        "pengaturan": {
-            "LOOKBACK": LOOKBACK, "faktor_overdue": FAKTOR_OVERDUE,
-            "hari_ini": nama_hari(hari_ini),
-            "daftar_pasaran_aktif": daftar_aktif
-        },
-        "hasil": {}
-    }
-
-    for p in daftar_aktif:
-        dp = data_pasaran[p]
-        if len(dp) < LOOKBACK + 20 + VALIDASI_MIN:
-            print(f"\n⚠️ {p:8} — kurang data ({len(dp)} baris)"); continue
-        print(f"\n{'─'*70}\n📊 {p} | {len(dp)} baris\n{'─'*70}")
-        X,Y,Xv,Yv,_ = siapkan_data(dp)
-        if X is None: continue
-
-        me, ie = latih_es(X,Y,Xv,Yv)
-        mo, io = cari_optuna(X,Y,Xv,Yv)
-        if not me or not mo: continue
-
-        hasil_e = jalankan_prediksi(me, ie, dp)
-        hasil_o = jalankan_prediksi(mo, io, dp)
-
-        hasil_akhir["hasil"][p] = {
-            "early_stopping": hasil_e,
-            "optuna": hasil_o
-        }
-
-        for nama, d in [("Early Stopping", hasil_e), ("Optuna", hasil_o)]:
-            print(f"\n🏆 {nama} — Epoch: {d['pengaturan']['epoch']} | Batch: {d['pengaturan']['batch_size']}")
-            for pos in ["AS","KOP","KEPALA","EKOR"]:
-                p7 = " ".join(d[pos]["overdue"]["p7"])
-                p9 = " ".join(d[pos]["overdue"]["p9"])
-                print(f"{pos}: 7+1D: {p7}  9D: {p9}")
-            print("\nGabungan 2D + Shio")
-            for kd in ["2DD","2DT","2DB"]:
-                ps = " ".join(d["2D"][kd]["pasangan"])
-                sh = d["2D"][kd]["shio_teks"]
-                print(f"\n{kd}: {ps}")
-                print(f"Shio: {sh}")
-
-    with open("hasil_prediksi.json","w",encoding="utf-8") as f:
-        json.dump(hasil_akhir, f, ensure_ascii=False, indent=2)
-    print(f"\n✅ Selesai → hasil_prediksi.json")
-
-if __name__ == "__main__":
-    utama()
+document.addEventListener('DOMContentLoaded', ambilData);
+</script>
+</body>
+</html>
