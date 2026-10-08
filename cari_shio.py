@@ -17,12 +17,18 @@ except ImportError:
     sys.exit(1)
 import urllib.request
 import json
-from datetime import datetime
+from datetime import datetime, date
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import LSTM, Dense, Input
 from tensorflow.keras.callbacks import EarlyStopping
 
-# === PENGATURAN ===
+# === PENGATURAN PASARAN ===
+DAFTAR_PASARAN_TETAP = [
+    "BE", "CLF", "SD", "HK", "SGP", "PS", "MCSE", "NCE", "TM", "TXM"
+]
+LIBUR_MINGGU = ["PS", "TM", "TXM"]
+LIBUR_SGP_HARI = ["Selasa", "Jumat"]  # Nama hari dalam bahasa Indonesia
+
 DATA_UNDIAN_URL = "https://raw.githubusercontent.com/peler3773-png/Data-Lotre/main/data_undian.txt"
 LOOKBACK = 12
 LIMIT_PER_PASARAN = 600
@@ -51,7 +57,6 @@ DAFTAR_SHIO_URUTAN = [
     {"urutan": 11, "nama": "MONYET"},
     {"urutan": 12, "nama": "KAMBING"}
 ]
-
 POLA_DASAR = {
     "KUDA":    ["01","13","25","37","49","61","73","85","97"],
     "ULAR":    ["02","14","26","38","50","62","74","86","98"],
@@ -111,6 +116,26 @@ def dapatkan_shio_dari_digit(digit):
             hasil.add(info["nomor"])
     return sorted(list(hasil))
 
+def nama_hari_indonesia(tgl_str):
+    """Ubah 'YYYY-MM-DD' → nama hari dalam bahasa Indonesia"""
+    hari = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"]
+    try:
+        tgl = datetime.strptime(tgl_str, "%Y-%m-%d").date()
+        return hari[tgl.weekday()]
+    except:
+        return ""
+
+def cek_boleh_tampil(pasaran, tanggal=None):
+    """Cek apakah pasaran boleh ditampilkan hari ini"""
+    hari_ini = nama_hari_indonesia(tanggal or datetime.now().strftime("%Y-%m-%d"))
+    # PS, TM, TXM libur Minggu
+    if pasaran in LIBUR_MINGGU and hari_ini == "Minggu":
+        return False
+    # SGP libur Selasa & Jumat
+    if pasaran == "SGP" and hari_ini in LIBUR_SGP_HARI:
+        return False
+    return True
+
 # === FUNGSI UTAMA ===
 def hitung_bobot_overdue(data_pasaran, posisi_idx):
     terakhir_muncul = {str(d): None for d in range(10)}
@@ -138,7 +163,7 @@ def hitung_bobot_overdue(data_pasaran, posisi_idx):
 def format_hasil(prob):
     urut = np.argsort(prob)[::-1].tolist()
     sembilan = urut[:9]
-    tujuh = urut[:7] + [urut[9]]
+    tujuh = urut[:7] + [urut[9]] if len(urut) > 9 else urut[:7]
     return {
         "tujuh": [str(a) for a in tujuh],
         "sembilan": [str(a) for a in sembilan]
@@ -254,9 +279,22 @@ def proses_semua():
     for p in data_pasaran:
         if len(data_pasaran[p])>LIMIT_PER_PASARAN:
             data_pasaran[p] = data_pasaran[p][-LIMIT_PER_PASARAN:]
-    list_pasaran = sorted(data_pasaran.keys())
+    
+    # === Filter sesuai daftar tetap & aturan libur hari ini ===
+    hari_ini_str = datetime.now().strftime("%Y-%m-%d")
+    list_pasaran = []
+    for p in DAFTAR_PASARAN_TETAP:
+        if p not in data_pasaran:
+            print(f"ℹ️ {p:8} — dilewati: tidak ada data")
+            continue
+        if not cek_boleh_tampil(p, hari_ini_str):
+            print(f"🚫 {p:8} — libur hari ini ({nama_hari_indonesia(hari_ini_str)})")
+            continue
+        list_pasaran.append(p)
+    
     print(f"\n{'='*70}")
     print(f"📋 PREDIKSI 2D + SHIO DINAMIS — Tahun {TAHUN_SEKARANG} | Geser {GESERAN}")
+    print(f"📅 Hari ini: {nama_hari_indonesia(hari_ini_str)}, {hari_ini_str}")
     print(f"="*70)
     hasil_akhir = {
         "diperbarui":datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -266,8 +304,13 @@ def proses_semua():
         "pengaturan":{"LOOKBACK":LOOKBACK,"LIMIT_PER_PASARAN":LIMIT_PER_PASARAN,
                       "faktor_overdue":FAKTOR_OVERDUE,"daftar_shio":DATA_SHIO,
                       "optuna":{"epoch_min":OPTUNA_EPOCH_MIN,"epoch_max":OPTUNA_EPOCH_MAX,
-                                "batch_choices":OPTUNA_BATCH_CHOICES,"percobaan":OPTUNA_CUPIKAN}},
-        "daftar_pasaran":list_pasaran,"hasil":{}
+                                "batch_choices":OPTUNA_BATCH_CHOICES,"percobaan":OPTUNA_CUPIKAN},
+                      "daftar_pasaran_ditetapkan": DAFTAR_PASARAN_TETAP,
+                      "libur_minggu": LIBUR_MINGGU,
+                      "libur_sgp_hari": LIBUR_SGP_HARI,
+                      "hari_ini": nama_hari_indonesia(hari_ini_str)},
+        "daftar_pasaran_aktif": list_pasaran,
+        "hasil":{}
     }
     nama_posisi, nama_output = ["AS","KOP","KEPALA","EKOR"],["as","kop","kep","eko"]
     for p in list_pasaran:
