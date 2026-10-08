@@ -101,45 +101,41 @@ def boleh_tampil(pasaran, tgl=None):
     if pasaran == "SGP" and hari_ini in LIBUR_SGP_HARI: return False
     return True
 
-# === ✅ HITUNG SHIO UNIK PER BAGIAN — SEMUA 12 URUT TERKUAT ===
+# === ✅ HITUNG SHIO — SEMUA 12 URUT TERKUAT ===
 def hitung_shio_dari_daftar(daftar_angka):
     bobot = {}
     for urut, ang in enumerate(daftar_angka):
-        berat = (10 - urut) / 10  # urutan depan = bobot lebih besar
+        berat = (10 - urut) / 10
         if ang in ANGKA_KE_SHIO:
             sn = ANGKA_KE_SHIO[ang]["nomor"]
             bobot[sn] = bobot.get(sn, 0) + berat
-        if len(ang) == 1:
-            akh = ang
-        else:
-            akh = ang[-1]
+        akh = ang[-1]
         for info in DATA_SHIO.values():
             if any(a.endswith(akh) for a in info["angka"]):
                 sn = info["urutan"]
                 bobot[sn] = bobot.get(sn, 0) + berat * 0.5
-    # Pastikan SEMUA 12 Shio ada, isi 0 jika tidak muncul
     for sn in range(1, 13):
-        if sn not in bobot:
-            bobot[sn] = 0
-    # Urut terkuat ke terlemah
+        if sn not in bobot: bobot[sn] = 0
     urut = sorted(bobot.items(), key=lambda x: (-round(x[1],4), x[0]))
     return [f"{k} {NOMOR_KE_NAMA[k]}" for k, _ in urut]
 
-def hitung_2d_shio(as_list, kop_list, kep_list, eko_list):
+# === ✅ DIPERBAIKI: Ambil list dari dict dulu baru dipotong ===
+def hitung_2d_shio(as_data, kop_data, kep_data, eko_data):
     mode = "overdue"
     hasil = {}
-    for kd, xd, yd in [
-        ("2DD", as_list[mode], kop_list[mode]),
-        ("2DT", kop_list[mode], kep_list[mode]),
-        ("2DB", kep_list[mode], eko_list[mode]),
+    for kd, x_data, y_data in [
+        ("2DD", as_data, kop_data),
+        ("2DT", kop_data, kep_data),
+        ("2DB", kep_data, eko_data),
     ]:
+        x_list = x_data[mode][:10]  # ✅ Ambil list dulu → baru dipotong
+        y_list = y_data[mode][:10]
         psg = []
         gabungan = []
-        for x in xd[:10]:
-            for y in yd[:10]:
+        for x in x_list:
+            for y in y_list:
                 gabungan.append(f"{x}{y}")
                 psg.append(f"{x}{y}")
-        # Hitung Shio unik dari gabungan angka pasangan
         shio_urut = hitung_shio_dari_daftar(gabungan)
         hasil[kd] = {
             "pasangan": psg[:10],
@@ -179,7 +175,6 @@ def bangun_model():
     out_kop = Dense(10, activation='softmax', name='kop')(x)
     out_kep = Dense(10, activation='softmax', name='kep')(x)
     out_eko = Dense(10, activation='softmax', name='eko')(x)
-    
     model = Model(inputs=inp, outputs=[out_as, out_kop, out_kep, out_eko])
     model.compile(
         optimizer='adam',
@@ -245,11 +240,9 @@ def cari_optuna(X,Y,Xv,Yv):
 def jalankan_prediksi(model, info, dp):
     inp = np.expand_dims(np.array([dp[j]["angka"] for j in range(-LOOKBACK, 0)], dtype=np.float32), 0)
     pred = model.predict(inp, verbose=0)
-    
     hasil_pos = {}
     nama_posisi = ["AS", "KOP", "KEPALA", "EKOR"]
     nama_output = ["as", "kop", "kep", "eko"]
-    
     for idx, (nm, onm) in enumerate(zip(nama_posisi, nama_output)):
         p = pred[idx][0].copy()
         p /= p.sum()
@@ -261,8 +254,6 @@ def jalankan_prediksi(model, info, dp):
             "murni": format_10(p),
             "overdue": format_10(po)
         }
-    
-    # === 2D + SHIO — Shio DIHITUNG TERPISAH per bagian, SEMUA 12 urut terkuat ===
     hasil_pos["2D"] = hitung_2d_shio(
         hasil_pos["AS"], hasil_pos["KOP"], hasil_pos["KEPALA"], hasil_pos["EKOR"]
     )
@@ -308,7 +299,7 @@ def utama():
         "shio_geser": GESERAN,
         "pengaturan": {
             "LOOKBACK": LOOKBACK, "faktor_overdue": FAKTOR_OVERDUE,
-            "daftar_shio": DATA_SHIO, "hari_ini": nama_hari(hari_ini),
+            "hari_ini": nama_hari(hari_ini),
             "daftar_pasaran_aktif": daftar_aktif
         },
         "hasil": {}
