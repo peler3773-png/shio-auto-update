@@ -119,17 +119,18 @@ def hitung_shio_dari_daftar(daftar_angka):
     urut = sorted(bobot.items(), key=lambda x: (-round(x[1],4), x[0]))
     return [f"{k} {NOMOR_KE_NAMA[k]}" for k, _ in urut]
 
-# === ✅ DIPERBAIKI: Ambil list dari dict dulu baru dipotong ===
+# === ✅ DIPERBAIKI: mode didefinisikan dulu, akses list benar ===
 def hitung_2d_shio(as_data, kop_data, kep_data, eko_data):
-    mode = "overdue"
+    mode = "overdue"  # ✅ Didefinisikan di awal
     hasil = {}
     for kd, x_data, y_data in [
         ("2DD", as_data, kop_data),
         ("2DT", kop_data, kep_data),
         ("2DB", kep_data, eko_data),
     ]:
-        x_list = x_data[mode][:10]  # ✅ Ambil list dulu → baru dipotong
-        y_list = y_data[mode][:10]
+        # ✅ Ambil list p10 dulu → baru dipotong
+        x_list = x_data[mode]["p10"][:10]
+        y_list = y_data[mode]["p10"][:10]
         psg = []
         gabungan = []
         for x in x_list:
