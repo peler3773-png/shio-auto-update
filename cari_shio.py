@@ -101,15 +101,34 @@ def boleh_tampil(pasaran, tgl=None):
     if pasaran == "SGP" and hari_ini in LIBUR_SGP_HARI: return False
     return True
 
-# === Saring Shio — Hanya yang BENAR-BENAR cocok ===
-def shio_dari_digit(d):
-    hasil = set()
-    ds = str(d)
-    if len(ds) != 1: return []
-    for info in DATA_SHIO.values():
-        if any(a.endswith(ds) for a in info["angka"]):
-            hasil.add(info["urutan"])
-    return sorted(hasil)
+# === Hitung BOBOT SHIO GABUNGAN — Urut Terkuat ke Terlemah ===
+def hitung_shio_terurut(pred_as, pred_kop, pred_kep, pred_eko, pakai_overdue=True):
+    mode = "overdue" if pakai_overdue else "murni"
+    bobot_shio = {}
+    
+    # Ambil 10 angka teratas dari tiap posisi
+    daftar_angka = []
+    for pos in [pred_as, pred_kop, pred_kep, pred_eko]:
+        daftar_angka.extend(pos[mode]["p10"])
+    
+    # Hitung frekuensi + bobot kemunculan Shio
+    for ang in daftar_angka:
+        if ang in ANGKA_KE_SHIO:
+            sn = ANGKA_KE_SHIO[ang]["nomor"]
+            bobot_shio[sn] = bobot_shio.get(sn, 0) + 1
+        if len(ang) == 2:
+            digit_akhir = ang[1]
+            for info in DATA_SHIO.values():
+                if any(a.endswith(digit_akhir) for a in info["angka"]):
+                    sn = info["urutan"]
+                    bobot_shio[sn] = bobot_shio.get(sn, 0) + 0.5
+    
+    # Urut dari terkuat ke terlemah → ambil 10 teratas
+    urut = sorted(bobot_shio.items(), key=lambda x: (-x[1], x[0]))
+    p10_shio = [{"nomor": k, "nama": NOMOR_KE_NAMA[k], "bobot": round(v,2)} for k,v in urut[:10]]
+    semua_shio = [{"nomor": k, "nama": NOMOR_KE_NAMA[k], "bobot": round(v,2)} for k,v in urut]
+    
+    return p10_shio, semua_shio
 
 def hitung_2d_shio(as_list, kop_list, kep_list, eko_list, pakai_overdue=True):
     mode = "overdue" if pakai_overdue else "murni"
@@ -128,9 +147,6 @@ def hitung_2d_shio(as_list, kop_list, kep_list, eko_list, pakai_overdue=True):
                     shio_set.add(ANGKA_KE_SHIO[ps]["nomor"])
                 elif y in ANGKA_KE_SHIO:
                     shio_set.add(ANGKA_KE_SHIO[y]["nomor"])
-                else:
-                    for s in shio_dari_digit(y):
-                        shio_set.add(s)
         hasil[nama] = {"pasangan": pasangan, "shio": sorted(shio_set)}
     return hasil
 
@@ -150,7 +166,6 @@ def bobot_overdue(data, pos):
             if terakhir[d] is None: terakhir[d] = rata
     return {d: 1 + (j/max_j)*FAKTOR_OVERDUE for d,j in terakhir.items()}
 
-# === FORMAT 10 PREDIKSI ===
 def format_10(prob):
     urut = np.argsort(prob)[::-1].tolist()
     return {
@@ -159,7 +174,6 @@ def format_10(prob):
         "p9":  [str(a) for a in urut[:9]]
     }
 
-# === ✅ DIPERBAIKI: Metrik Sesuai Jumlah Output ===
 def bangun_model():
     inp = Input(shape=(LOOKBACK, 4))
     x = LSTM(64, activation='relu')(inp)
@@ -234,9 +248,11 @@ def cari_optuna(X,Y,Xv,Yv):
 def jalankan_prediksi(model, info, dp):
     inp = np.expand_dims(np.array([dp[j]["angka"] for j in range(-LOOKBACK, 0)], dtype=np.float32), 0)
     pred = model.predict(inp, verbose=0)
-    nama_output = ["as", "kop", "kep", "eko"]
-    nama_posisi = ["AS", "KOP", "KEPALA", "EKOR"]
+    
     hasil_pos = {}
+    nama_posisi = ["AS", "KOP", "KEPALA", "EKOR"]
+    nama_output = ["as", "kop", "kep", "eko"]
+    
     for idx, (nm, onm) in enumerate(zip(nama_posisi, nama_output)):
         p = pred[idx][0].copy()
         p /= p.sum()
@@ -248,6 +264,14 @@ def jalankan_prediksi(model, info, dp):
             "murni": format_10(p),
             "overdue": format_10(po)
         }
+    
+    # === 10 SHIO TERKUAT GABUNGAN ===
+    p10_shio, semua_shio = hitung_shio_terurut(
+        hasil_pos["AS"], hasil_pos["KOP"], hasil_pos["KEPALA"], hasil_pos["EKOR"]
+    )
+    
+    hasil_pos["SHIO_10_TERKUAT"] = p10_shio
+    hasil_pos["SHIO_SEMUA_URUT"] = semua_shio
     hasil_pos["2D"] = hitung_2d_shio(
         hasil_pos["AS"], hasil_pos["KOP"], hasil_pos["KEPALA"], hasil_pos["EKOR"]
     )
@@ -287,7 +311,7 @@ def utama():
         daftar_aktif.append(p)
 
     print(f"\n{'='*70}")
-    print(f"🔮 PREDIKSI 10 ANGKA + SHIO — Tahun {TAHUN_SEKARANG} | Geser {GESERAN}")
+    print(f"🔮 10 SHIO TERKUAT — Tahun {TAHUN_SEKARANG} | Geser {GESERAN}")
     print(f"📅 Hari: {nama_hari(hari_ini)}, {hari_ini}")
     print(f"="*70)
 
@@ -326,9 +350,17 @@ def utama():
 
         for nama, d in [("Early Stopping", hasil_e), ("Optuna", hasil_o)]:
             print(f"\n  ✅ {nama} | Epoch: {d['pengaturan']['epoch']} | Batch: {d['pengaturan']['batch_size']}")
+            # === 10 SHIO TERKUAT ===
+            print(f"\n  🏆 10 SHIO TERKUAT (URUT DARI TERKUAT):")
+            for idx, s in enumerate(d["SHIO_10_TERKUAT"], 1):
+                print(f"     {idx:2}. {s['nomor']:2} {s['nama']:8} | Bobot: {s['bobot']}")
+            # === Angka per posisi ===
+            print(f"\n  📐 Angka per posisi:")
             for pos in ["AS","KOP","KEPALA","EKOR"]:
                 p10 = " ".join(d[pos]["overdue"]["p10"])
-                print(f"     {pos:6} → 10: {p10}")
+                print(f"     {pos:6} → {p10}")
+            # === 2D ===
+            print(f"\n  🔗 Gabungan 2D:")
             for kd in ["2DD","2DT","2DB"]:
                 ps = " ".join(d["2D"][kd]["pasangan"][:10])
                 sh = ", ".join(f"{n} {NOMOR_KE_NAMA[n]}" for n in d["2D"][kd]["shio"])
