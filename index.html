@@ -30,7 +30,7 @@
     .kotak-2d { background: var(--abu-lembut); padding: 1rem; border-radius: 8px; border-left: 3px solid var(--emas); }
     .kotak-2d h3 { color: var(--emas); margin-bottom: 0.6rem; font-size: 1rem; }
     .pasangan { font-family: 'Courier New', monospace; font-size: 0.9rem; line-height: 1.6; color: #ddd; word-break: break-all; }
-    .daftar-shio { margin-top: 0.5rem; font-size: 0.85rem; color: #999; line-height: 1.7; }
+    .daftar-shio { margin-top: 0.5rem; font-size: 0.9rem; color: #ccc; line-height: 1.6; }
     .daftar-shio strong { color: var(--emas); }
     .label-metode { display: inline-block; background: var(--emas); color: #000; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; margin-bottom: 0.8rem; }
     .memuat { text-align: center; padding: 3rem; color: #888; }
@@ -51,15 +51,10 @@
     </select>
   </div>
   <div id="konten"><div class="memuat" id="sedangMemuat">Mengambil data...</div></div>
-  <div class="footer">LSTM + Optuna • Shio Dinamis • 12 Shio Tampil Semua</div>
+  <div class="footer">LSTM + Optuna • Shio: Nomor Urut Saja</div>
 </div>
 <script>
 let dataGlobal = null;
-const NOMOR_KE_NAMA = {
-  1: "KUDA", 2: "ULAR", 3: "NAGA", 4: "KELINCI",
-  5: "HARIMAU", 6: "KERBAU", 7: "TIKUS", 8: "BABI",
-  9: "ANJING", 10: "AYAM", 11: "MONYET", 12: "KAMBING"
-};
 
 async function ambilData() {
   try {
