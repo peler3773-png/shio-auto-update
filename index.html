@@ -6,19 +6,15 @@
   <title>Prediksi Shio & 2D — LSTM + Optuna</title>
   <style>
     :root {
-      --hitam: #0a0a0f;
-      --emas: #d4af37;
-      --emas-terang: #f0d760;
-      --abu: #1a1a24;
-      --abu-lembut: #2a2a38;
-      --teks: #e6e6e6;
+      --hitam: #0a0a0f; --emas: #d4af37; --emas-terang: #f0d760;
+      --abu: #1a1a24; --abu-lembut: #2a2a38; --teks: #e6e6e6;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', Roboto, sans-serif; }
     body { background: var(--hitam); color: var(--teks); min-height: 100vh; padding: 1rem; }
     .wadah { max-width: 1200px; margin: 0 auto; }
     header { text-align: center; padding: 1.5rem 0; border-bottom: 1px solid var(--emas); margin-bottom: 1.5rem; }
     h1 { color: var(--emas); font-size: 1.6rem; }
-    .info-waktu { font-size: 0.9rem; color: #999; margin-top: 0.5rem; }
+    .info-waktu { font-size: 0.9rem; color: #999; margin-top: 0.5rem; line-height: 1.5; }
     .tombol-refresh { background: var(--emas); color: #000; border: none; padding: 0.6rem 1.2rem; border-radius: 6px; font-weight: bold; cursor: pointer; margin-top: 0.8rem; transition: 0.2s; }
     .tombol-refresh:hover { background: var(--emas-terang); }
     .pilihan-pasaran { margin: 1rem 0; text-align: center; }
@@ -50,42 +46,46 @@
     <div class="info-waktu" id="infoWaktu">Memuat data...</div>
     <button class="tombol-refresh" onclick="muatUlang()">🔄 Muat Ulang Data</button>
   </header>
-
   <div class="pilihan-pasaran" id="pilihPasaran">
     <select id="daftarPasaran" onchange="tampilkanPasaran(this.value)">
       <option value="">Pilih Pasaran...</option>
     </select>
   </div>
-
   <div id="konten">
     <div class="memuat" id="sedangMemuat">Sedang mengambil data terbaru...</div>
   </div>
-
   <div class="footer">
-    Sumber data: Data-Lotre • Model: LSTM + Optuna • Pembaruan otomatis tiap 12 jam
+    Sumber: Data-Lotre • Model: LSTM + Optuna • Shio Dinamis • Pembaruan tiap 12 jam
   </div>
 </div>
 
 <script>
 let dataGlobal = null;
+const NOMOR_KE_NAMA = {};
 
 async function ambilData() {
   try {
     const res = await fetch('hasil_prediksi.json?t=' + Date.now());
     if (!res.ok) throw new Error('File tidak ditemukan');
     dataGlobal = await res.json();
+    Object.keys(NOMOR_KE_NAMA).forEach(k => delete NOMOR_KE_NAMA[k]);
+    if (dataGlobal.pengaturan?.daftar_shio) {
+      for (const [nama, info] of Object.entries(dataGlobal.pengaturan.daftar_shio)) {
+        NOMOR_KE_NAMA[info.urutan] = nama;
+      }
+    }
     tampilkanInfoDasar();
     isiDaftarPasaran();
   } catch (e) {
     document.getElementById('sedangMemuat').innerHTML =
-      '⚠️ Gagal memuat data: ' + e.message + '<br>Pastikan <code>hasil_prediksi.json</code> sudah ada di repo.';
+      '⚠️ Gagal memuat: ' + e.message + '<br>Pastikan <code>hasil_prediksi.json</code> sudah ada.';
   }
 }
 
 function tampilkanInfoDasar() {
-  const w = dataGlobal.diperbarui;
   document.getElementById('infoWaktu').innerHTML =
-    `Terakhir diperbarui: <strong>${w}</strong> (${dataGlobal.zona_waktu})`;
+    `Terakhir: <strong>${dataGlobal.diperbarui}</strong> (${dataGlobal.zona_waktu})<br>` +
+    `Shio Tahun <strong>${dataGlobal.shio_tahun}</strong> | Geseran: ${dataGlobal.shio_geseran}`;
 }
 
 function isiDaftarPasaran() {
@@ -93,28 +93,22 @@ function isiDaftarPasaran() {
   pilih.innerHTML = '<option value="">Pilih Pasaran...</option>';
   dataGlobal.daftar_pasaran.forEach(p => {
     const opt = document.createElement('option');
-    opt.value = p;
-    opt.textContent = p;
-    pilih.appendChild(opt);
+    opt.value = p; opt.textContent = p; pilih.appendChild(opt);
   });
   document.getElementById('sedangMemuat').classList.add('tersembunyi');
 }
 
 function tampilkanPasaran(kode) {
   if (!kode || !dataGlobal.hasil[kode]) {
-    document.getElementById('konten').innerHTML = '';
-    return;
+    document.getElementById('konten').innerHTML = ''; return;
   }
   const p = dataGlobal.hasil[kode];
   let html = `<h2 style="color:var(--emas); margin-bottom:1rem;">📊 ${kode}</h2>`;
-
   ['early_stopping', 'optuna'].forEach(metode => {
     const m = p[metode];
     const namaMetode = metode === 'early_stopping' ? '⏱️ Early Stopping' : '🎯 Optuna';
-
     html += `<div class="kartu">
       <span class="label-metode">${namaMetode} — Epoch: ${m.pengaturan.epoch} | Batch: ${m.pengaturan.batch_size}</span>
-      
       <div class="baris">
         ${['AS','KOP','KEPALA','EKOR'].map(pos => `
         <div class="kotak">
@@ -123,21 +117,19 @@ function tampilkanPasaran(kode) {
           <div class="angka-9">9D: ${m[pos].overdue.sembilan.join('')}</div>
         </div>`).join('')}
       </div>
-
       <div class="bagian-2d">
         <h3>🔗 Gabungan 2D + Shio</h3>
         <div class="grid-2d">
-          ${['2DD','2DT','2DB'].map(jenis => `
+          ${[['2DD','AS+KOP'],['2DT','KOP+KEP'],['2DB','KEP+EKOR']].map(([kd,ket]) => `
           <div class="kotak-2d">
-            <h3>${jenis} — ${jenis==='2DD'?'AS+KOP':jenis==='2DT'?'KOP+KEP':'KEP+EKOR'}</h3>
-            <div class="pasangan">${m['2D'][jenis].pasangan.slice(0,12).join(' · ')}</div>
-            <div class="daftar-shio"><strong>Shio:</strong> ${m['2D'][jenis].shio.join(', ')}</div>
+            <h3>${kd} — ${ket}</h3>
+            <div class="pasangan">${m['2D'][kd].pasangan.slice(0,10).join(' · ')}</div>
+            <div class="daftar-shio"><strong>Shio:</strong> ${m['2D'][kd].shio.map(n => n+' '+NOMOR_KE_NAMA[n]).join(', ')}</div>
           </div>`).join('')}
         </div>
       </div>
     </div>`;
   });
-
   document.getElementById('konten').innerHTML = html;
 }
 
