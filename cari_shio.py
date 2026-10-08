@@ -172,16 +172,24 @@ def format_hasil(prob):
 def hitung_2d_shio(pred_as, pred_kop, pred_kep, pred_eko, pakai_overdue=True):
     a = 'overdue' if pakai_overdue else 'murni'
     daftar = {}
+
+    # === 2DD — AS + KOP ===
     dd_pasangan, dd_shio = [], set()
     for x in pred_as[a]['tujuh']:
         for y in pred_kop[a]['tujuh']:
             ps = x + y
             dd_pasangan.append(ps)
+            # Cek pasangan 2 digit lengkap
             if ps in ANGKA_KE_SHIO:
                 dd_shio.add(ANGKA_KE_SHIO[ps]["nomor"])
             else:
-                dd_shio.update(dapatkan_shio_dari_digit(y))
+                # Cek digit belakang saja jika pasangan tidak ada
+                if y in ANGKA_KE_SHIO:
+                    dd_shio.add(ANGKA_KE_SHIO[y]["nomor"])
+
     daftar['2DD'] = {'pasangan': dd_pasangan, 'shio': sorted(dd_shio)}
+
+    # === 2DT — KOP + KEPALA ===
     dt_pasangan, dt_shio = [], set()
     for x in pred_kop[a]['tujuh']:
         for y in pred_kep[a]['tujuh']:
@@ -190,8 +198,12 @@ def hitung_2d_shio(pred_as, pred_kop, pred_kep, pred_eko, pakai_overdue=True):
             if ps in ANGKA_KE_SHIO:
                 dt_shio.add(ANGKA_KE_SHIO[ps]["nomor"])
             else:
-                dt_shio.update(dapatkan_shio_dari_digit(y))
+                if y in ANGKA_KE_SHIO:
+                    dt_shio.add(ANGKA_KE_SHIO[y]["nomor"])
+
     daftar['2DT'] = {'pasangan': dt_pasangan, 'shio': sorted(dt_shio)}
+
+    # === 2DB — KEPALA + EKOR ===
     db_pasangan, db_shio = [], set()
     for x in pred_kep[a]['tujuh']:
         for y in pred_eko[a]['tujuh']:
@@ -200,7 +212,9 @@ def hitung_2d_shio(pred_as, pred_kop, pred_kep, pred_eko, pakai_overdue=True):
             if ps in ANGKA_KE_SHIO:
                 db_shio.add(ANGKA_KE_SHIO[ps]["nomor"])
             else:
-                db_shio.update(dapatkan_shio_dari_digit(y))
+                if y in ANGKA_KE_SHIO:
+                    db_shio.add(ANGKA_KE_SHIO[y]["nomor"])
+
     daftar['2DB'] = {'pasangan': db_pasangan, 'shio': sorted(db_shio)}
     return daftar
 
